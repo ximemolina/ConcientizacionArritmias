@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 42d89f86baa317b40bccf70b993f4f08
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - badPhaseMusic: {fileID: 8300000, guid: 8aa6fdd94190b234a8b51d2042800938, type: 3}
+  - goodPhaseMusic: {fileID: 8300000, guid: eacbc38fd0d69be46a4809ce624b1bc3, type: 3}
+  - badPhaseStartVO: {fileID: 8300000, guid: 24cafa0d04bc0194aa0a117bfc58e813, type: 3}
+  - goodPhaseStartVO: {fileID: 8300000, guid: 42b106df1d39486419a357a1c4e776d1, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
