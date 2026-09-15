@@ -26,8 +26,17 @@ public class PieceFloatAnimator : MonoBehaviour
     private Vector3 floatPosition;
     private bool isHeld = false;
     private bool isSnapped = false;
+    private bool isTraveling = false;
     private float hoverTimer = 0f;
     private Quaternion targetRotation;
+
+    private Transform followAnchor;
+    private Vector3 playerLocalOffset;
+    private bool followPlayer;
+    private bool flattenYaw;
+    private float followSmoothing;
+    private Vector3 smoothedFloatPosition;
+    private bool hasSmoothedPosition;
 
     // -------------------------------------------------------------------------
     [Header("Behaviour")]
@@ -37,10 +46,30 @@ public class PieceFloatAnimator : MonoBehaviour
     /// </summary>
     public void Initialize(Vector3 targetPos, Quaternion targetRot, float staggerDelay = 0f)
     {
+        Initialize(targetPos, targetRot, staggerDelay, null, Vector3.zero, false, true, 0f);
+    }
+
+    public void Initialize(
+        Vector3 targetPos,
+        Quaternion targetRot,
+        float staggerDelay,
+        Transform follow,
+        Vector3 localOffset,
+        bool followWhileFloating,
+        bool flattenPlayerYaw,
+        float smoothing)
+    {
         grab = GetComponent<XRGrabInteractable>();
         rb = GetComponent<Rigidbody>();
+        followAnchor = follow;
+        playerLocalOffset = localOffset;
+        followPlayer = followWhileFloating && follow != null;
+        flattenYaw = flattenPlayerYaw;
+        followSmoothing = smoothing;
         floatPosition = targetPos;
         targetRotation = targetRot;
+        smoothedFloatPosition = GetDesiredFloatPosition();
+        hasSmoothedPosition = true;
 
         if (grab != null)
         {
@@ -48,8 +77,6 @@ public class PieceFloatAnimator : MonoBehaviour
             grab.trackPosition = true;
             grab.movementType = XRBaseInteractable.MovementType.VelocityTracking;
 
-            grab.selectEntered.RemoveAllListeners();
-            grab.selectExited.RemoveAllListeners();
             grab.selectEntered.AddListener((args) => OnGrabbed());
             grab.selectExited.AddListener((args) => OnReleased());
         }
@@ -72,10 +99,12 @@ public class PieceFloatAnimator : MonoBehaviour
     {
         if (delay > 0f) yield return new WaitForSeconds(delay);
 
-        yield return StartCoroutine(LerpToFloatPositionAndRotation(transform.position, floatPosition, targetRotation));
+        isTraveling = true;
+        yield return StartCoroutine(LerpToFloatPositionAndRotation(transform.position, targetRotation));
+        isTraveling = false;
     }
 
-    private IEnumerator LerpToFloatPositionAndRotation(Vector3 fromPos, Vector3 toPos, Quaternion toRot)
+    private IEnumerator LerpToFloatPositionAndRotation(Vector3 fromPos, Quaternion toRot)
     {
         if (rb != null)
         {
@@ -84,8 +113,9 @@ public class PieceFloatAnimator : MonoBehaviour
             rb.constraints = RigidbodyConstraints.None;
         }
 
+        Vector3 initialTarget = GetCurrentFloatPosition();
         float startTime = Time.time;
-        float journeyLength = Vector3.Distance(fromPos, toPos);
+        float journeyLength = Vector3.Distance(fromPos, initialTarget);
         float duration = Mathf.Max(journeyLength / lerpSpeed, 1.5f);
 
         float rotationStartTime = Time.time;
@@ -94,6 +124,7 @@ public class PieceFloatAnimator : MonoBehaviour
 
         while (!isHeld && !isSnapped)
         {
+            Vector3 toPos = GetCurrentFloatPosition();
             float elapsed = Time.time - startTime;
             float fraction = Mathf.Clamp01(elapsed / duration);
             float smooth = Mathf.SmoothStep(0, 1, fraction);
@@ -118,7 +149,7 @@ public class PieceFloatAnimator : MonoBehaviour
 
         if (isHeld || isSnapped) yield break;
 
-        transform.position = toPos;
+        transform.position = GetCurrentFloatPosition();
         if (applyRotationDuringFloat) transform.rotation = toRot;
 
         hoverTimer = 0f;
@@ -135,19 +166,20 @@ public class PieceFloatAnimator : MonoBehaviour
         }
 
         float startTime = Time.time;
-        float journeyLength = Vector3.Distance(from, floatPosition);
+        float journeyLength = Vector3.Distance(from, GetCurrentFloatPosition());
         float duration = Mathf.Max(journeyLength / lerpSpeed, 0.5f);
 
         while (!isHeld && !isSnapped)
         {
+            Vector3 target = GetCurrentFloatPosition();
             float elapsed = Time.time - startTime;
             float fraction = Mathf.Clamp01(elapsed / duration);
 
-            transform.position = Vector3.Lerp(from, floatPosition, Mathf.SmoothStep(0, 1, fraction));
+            transform.position = Vector3.Lerp(from, target, Mathf.SmoothStep(0, 1, fraction));
 
             if (fraction >= 1f)
             {
-                transform.position = floatPosition;
+                transform.position = target;
                 break;
             }
 
@@ -156,11 +188,79 @@ public class PieceFloatAnimator : MonoBehaviour
 
         if (isHeld || isSnapped) yield break;
 
-        transform.position = floatPosition;
+        transform.position = GetCurrentFloatPosition();
         hoverTimer = 0f;
     }
 
+    private IEnumerator ReturnToFloatAndFinish(Vector3 from)
+    {
+        yield return ReturnToFloat(from);
+        isTraveling = false;
+    }
+
+    private Vector3 GetDesiredFloatPosition()
+    {
+        if (followAnchor == null)
+            return floatPosition;
+
+        Vector3 origin = followAnchor.position;
+        Vector3 forward = followAnchor.forward;
+
+        if (flattenYaw)
+        {
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.0001f)
+                forward = Vector3.ProjectOnPlane(followAnchor.up, Vector3.up);
+            if (forward.sqrMagnitude < 0.0001f)
+                forward = Vector3.forward;
+            else
+                forward.Normalize();
+        }
+
+        Vector3 right = Vector3.Cross(Vector3.up, forward);
+        if (right.sqrMagnitude < 0.0001f)
+            right = Vector3.right;
+        else
+            right.Normalize();
+
+        return origin
+            + right * playerLocalOffset.x
+            + Vector3.up * playerLocalOffset.y
+            + forward * playerLocalOffset.z;
+    }
+
+    private Vector3 GetCurrentFloatPosition()
+    {
+        if (!followPlayer || followAnchor == null)
+            return floatPosition;
+
+        Vector3 desired = GetDesiredFloatPosition();
+
+        if (!hasSmoothedPosition)
+        {
+            smoothedFloatPosition = desired;
+            hasSmoothedPosition = true;
+            return desired;
+        }
+
+        if (followSmoothing <= 0f)
+            return desired;
+
+        float t = 1f - Mathf.Exp(-followSmoothing * Time.deltaTime);
+        smoothedFloatPosition = Vector3.Lerp(smoothedFloatPosition, desired, t);
+        return smoothedFloatPosition;
+    }
+
     // -------------------------------------------------------------------------
+
+    public void MarkSnapped()
+    {
+        isSnapped = true;
+        isHeld = false;
+        isTraveling = false;
+        followPlayer = false;
+        StopAllCoroutines();
+    }
 
     private void OnGrabbed()
     {
@@ -184,8 +284,17 @@ public class PieceFloatAnimator : MonoBehaviour
         if (isSnapped) return;
         isHeld = false;
 
+        if (grab != null && !grab.enabled)
+        {
+            MarkSnapped();
+            return;
+        }
+
         if (enableHovering && returnToFloatOnRelease)
-            StartCoroutine(ReturnToFloat(transform.position));
+        {
+            isTraveling = true;
+            StartCoroutine(ReturnToFloatAndFinish(transform.position));
+        }
 
         // If hovering disabled, just restore gravity so it drops normally
         if (!enableHovering && rb != null)
@@ -199,23 +308,27 @@ public class PieceFloatAnimator : MonoBehaviour
 
     private void Update()
     {
-        if (isHeld || isSnapped) return;
-        if (!enableHovering) return;
+        if (isSnapped) return;
 
-        // Mark as snapped if the grab interactable was disabled externally (by CorrectRotationPuzzle)
         if (grab != null && !grab.enabled)
         {
-            isSnapped = true;
+            MarkSnapped();
             return;
         }
 
+        if (isHeld) return;
+        if (!enableHovering) return;
+        if (isTraveling) return;
+
         if (rb != null && !rb.isKinematic) return;
-        if (Vector3.Distance(transform.position, floatPosition) > arrivalThreshold * 4f) return;
+
+        Vector3 hoverOrigin = GetCurrentFloatPosition();
+        if (!followPlayer && Vector3.Distance(transform.position, hoverOrigin) > arrivalThreshold * 4f) return;
 
         // Hover
         hoverTimer += Time.deltaTime;
         float yOffset = Mathf.Sin(hoverTimer * hoverFrequency * Mathf.PI * 2f) * hoverAmplitude;
-        transform.position = floatPosition + Vector3.up * yOffset;
+        transform.position = hoverOrigin + Vector3.up * yOffset;
 
         // Rotate toward target
         var puzzle = GetComponent<CorrectRotationPuzzle>();

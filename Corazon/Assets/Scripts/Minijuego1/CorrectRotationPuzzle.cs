@@ -157,6 +157,8 @@ public class CorrectRotationPuzzle : MonoBehaviour
         {
             _isPlaced = true;
 
+            GetComponent<PieceFloatAnimator>()?.MarkSnapped();
+
             // Snap to exact slot position and rotation
             transform.position = targetSlot.position;
             transform.rotation = targetSlot.rotation;

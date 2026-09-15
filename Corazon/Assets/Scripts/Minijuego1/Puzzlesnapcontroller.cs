@@ -77,6 +77,9 @@ public class PuzzleSnapController : MonoBehaviour
         XRGrabInteractable grab = other.GetComponent<XRGrabInteractable>();
         if (grab == null) return;
 
+        var floatAnimator = other.GetComponent<PieceFloatAnimator>();
+        floatAnimator?.MarkSnapped();
+
         // Force the interactor to drop the object before we lock it
         if (grab.isSelected)
         {
