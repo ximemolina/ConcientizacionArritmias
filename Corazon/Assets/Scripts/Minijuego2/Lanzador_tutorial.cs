@@ -33,15 +33,27 @@ public class LanzadorTutorial : MonoBehaviour
     public AudioClip audio2; // Suena al lanzar el objeto 2
     public AudioClip audio3; // Suena cuando el objeto 1 es agarrado
 
-    private AudioSource audioSource;
-    private Vector3[] posicionesIniciales;
-    private bool objeto1Desactivado = false;
-
     [Header("SFX Correcto")]
     public AudioSource SFX_Correct_Source;
 
     [Header("SFX Lanzamiento")]
     public AudioSource SFX_Lanzamiento_Source;
+
+    [Header("Player-relative spawn")]
+    [Tooltip("Headset/camera used to place tutorial objects. If empty, Camera.main is used.")]
+    public Transform playerHead;
+    [Tooltip("Launch objects in front of the player once. They stay in world space after that.")]
+    public bool spawnInFrontOfPlayer = true;
+    [Tooltip("Distance in front of the player (meters).")]
+    public float floatDistance = 1.35f;
+    [Tooltip("Vertical offset from eye height at launch (negative = below the headset).")]
+    public float heightOffset = -1.25f;
+
+    private AudioSource audioSource;
+    private Vector3[] posicionesIniciales;
+    private bool objeto1Desactivado = false;
+    private bool hasPlayerAnchor;
+    private Vector3 launchAnchor;
 
     void Start()
     {
@@ -66,6 +78,7 @@ public class LanzadorTutorial : MonoBehaviour
     public void Relanzar()
     {
         objeto1Desactivado = false;
+        CachePlayerLaunchAnchor();
         StartCoroutine(LanzarTodos());
     }
 
@@ -80,7 +93,7 @@ public class LanzadorTutorial : MonoBehaviour
             if (rb1 != null)
             {
                 obj1.SetActive(true);
-                obj1.transform.position = posicionesIniciales[0];
+                obj1.transform.position = GetLaunchPosition(0);
                 rb1.isKinematic = false;
                 rb1.useGravity = true;
                 rb1.linearVelocity = Vector3.zero;
@@ -122,7 +135,7 @@ public class LanzadorTutorial : MonoBehaviour
             if (rb2 != null)
             {
                 obj2.SetActive(true);
-                obj2.transform.position = posicionesIniciales[1];
+                obj2.transform.position = GetLaunchPosition(1);
                 rb2.isKinematic = false;
                 rb2.useGravity = true;
                 rb2.linearVelocity = Vector3.zero;
@@ -164,6 +177,43 @@ public class LanzadorTutorial : MonoBehaviour
                 activateObjects();
             }
         }
+    }
+
+    private void CachePlayerLaunchAnchor()
+    {
+        hasPlayerAnchor = false;
+        if (!spawnInFrontOfPlayer)
+            return;
+
+        Transform player = playerHead != null ? playerHead : (Camera.main != null ? Camera.main.transform : null);
+        if (player == null)
+        {
+            Debug.LogWarning("[LanzadorTutorial] No player head found — using original launch positions.");
+            return;
+        }
+
+        Vector3 forward = player.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.ProjectOnPlane(player.up, Vector3.up);
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+        else
+            forward.Normalize();
+
+        launchAnchor = player.position + forward * floatDistance + Vector3.up * heightOffset;
+        hasPlayerAnchor = true;
+    }
+
+    private Vector3 GetLaunchPosition(int index)
+    {
+        if (hasPlayerAnchor)
+            return launchAnchor;
+
+        if (posicionesIniciales != null && index >= 0 && index < posicionesIniciales.Length)
+            return posicionesIniciales[index];
+
+        return transform.position;
     }
 
     private IEnumerator SubirYCongelarAlBajar(GameObject obj, Rigidbody rb, float alturaCongelado)

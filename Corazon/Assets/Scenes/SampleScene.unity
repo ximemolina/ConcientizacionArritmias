@@ -46243,6 +46243,10 @@ MonoBehaviour:
   audio3: {fileID: 8300000, guid: 3dee2cde2b1b20b4d910d4b3abd689a5, type: 3}
   SFX_Correct_Source: {fileID: 1892525949}
   SFX_Lanzamiento_Source: {fileID: 1643440925}
+  playerHead: {fileID: 0}
+  spawnInFrontOfPlayer: 1
+  floatDistance: 1.35
+  heightOffset: -1.25
 --- !u!1 &839651881 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 8164078558771037576, guid: 2bccf76718cf58d42a327b065841333a, type: 3}
