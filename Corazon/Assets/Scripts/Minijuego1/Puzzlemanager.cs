@@ -29,6 +29,8 @@ public class PuzzleManager : MonoBehaviour
 
     private bool _completed = false;
     private bool _doorMoving = false;
+    private Vector3 _doorSlideTarget;
+    private Transform _doorPanel;
 
     // Store original scales so we restore them correctly
     private Dictionary<GameObject, Vector3> _originalScales = new Dictionary<GameObject, Vector3>();
@@ -63,6 +65,10 @@ public class PuzzleManager : MonoBehaviour
 
             _completed = true;
             _doorMoving = true;
+            Transform panel = SlidingDoorMotion.GetSlidingPanel(door.transform);
+            SlidingDoorMotion.AttachSlidingHardware(door.transform, panel);
+            _doorPanel = panel;
+            _doorSlideTarget = SlidingDoorMotion.GetOpenLocalPosition(panel, targetPosition);
             Debug.Log("[Puzzle] 🎉 Puzzle complete!");
             GameAudioManager.Instance?.PlayPuzzleCompleteVO();
             slideshow.StartSlideshow();
@@ -72,18 +78,12 @@ public class PuzzleManager : MonoBehaviour
             
         }
 
-        if (_doorMoving && door != null)
+        if (_doorMoving && _doorPanel != null)
         {
-            door.transform.position = Vector3.MoveTowards(
-                door.transform.position,
-                targetPosition,
-                doorSpeed * Time.deltaTime
-            );
-            if (Vector3.Distance(door.transform.position, targetPosition) < 0.001f)
+            if (SlidingDoorMotion.MoveLocalTowards(_doorPanel, _doorSlideTarget, doorSpeed))
             {
-                door.transform.position = targetPosition;
                 _doorMoving = false;
-                Debug.Log("[Puzzle] 🚪 Door opened!");
+                Debug.Log("[Puzzle] Door opened!");
             }
         }
     }
@@ -191,7 +191,12 @@ public class PuzzleManager : MonoBehaviour
     {
         if (door == null) return;
         Gizmos.color = Color.cyan;
-        Gizmos.DrawWireSphere(targetPosition, 0.15f);
-        Gizmos.DrawLine(door.transform.position, targetPosition);
+        Transform panel = SlidingDoorMotion.GetSlidingPanel(door.transform);
+        Vector3 localTarget = SlidingDoorMotion.GetOpenLocalPosition(panel, targetPosition);
+        Vector3 worldTarget = panel.parent != null
+            ? panel.parent.TransformPoint(localTarget)
+            : localTarget;
+        Gizmos.DrawWireSphere(worldTarget, 0.15f);
+        Gizmos.DrawLine(panel.position, worldTarget);
     }
 }

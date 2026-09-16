@@ -10,6 +10,9 @@ public class GameManager : MonoBehaviour
 
     private int filledContainers = 0;
     private bool gameWon = false;
+    private bool doorTargetCached;
+    private Vector3 doorSlideTarget;
+    private Transform doorPanel;
 
     [SerializeField] private QuadImageSlideshow slideshow;
 
@@ -20,12 +23,21 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
-        if (gameWon)
+        if (gameWon && door != null)
         {
-            Vector3 currentPos = door.position;
-            float newZ = Mathf.MoveTowards(currentPos.z, doorOpenTarget.position.z, Time.deltaTime * doorSpeed);
+            if (!doorTargetCached)
+            {
+                doorPanel = SlidingDoorMotion.GetSlidingPanel(door);
+                SlidingDoorMotion.AttachSlidingHardware(door, doorPanel);
+                Vector3 openPoint = doorOpenTarget != null
+                    ? doorOpenTarget.position
+                    : doorPanel.position + doorPanel.right * SlidingDoorMotion.DefaultSlideDistance;
+                doorSlideTarget = SlidingDoorMotion.GetOpenLocalPosition(doorPanel, openPoint);
+                doorTargetCached = true;
+            }
 
-            door.position = new Vector3(currentPos.x, currentPos.y, newZ);
+            if (doorPanel != null)
+                SlidingDoorMotion.MoveLocalTowards(doorPanel, doorSlideTarget, doorSpeed);
         }
     }
 
@@ -35,6 +47,7 @@ public class GameManager : MonoBehaviour
         if (filledContainers >= totalContainers)
         {
             gameWon = true;
+            doorTargetCached = false;
             Debug.Log("You win! Door opening.");
             slideshow.StartSlideshow();
         }

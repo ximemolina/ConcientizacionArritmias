@@ -19,6 +19,10 @@ public class QuadImageSlideshow : MonoBehaviour
     [Tooltip("Si está activo, se puede volver a presionar el botón mientras corre para reiniciar")]
     public bool allowRestart = true;
 
+    [Header("Brillo")]
+    [Tooltip("Intensidad de emisión del fondo del portal")]
+    public float emissionIntensity = 2.2f;
+
     private Renderer quadRenderer;
     private Coroutine slideshowCoroutine;
     private int currentIndex = 0;
@@ -85,7 +89,15 @@ public class QuadImageSlideshow : MonoBehaviour
     {
         if (tex == null) return;
 
-        // mainTexture funciona con la mayoría de shaders (Standard, URP Lit, Unlit, etc.)
         quadRenderer.material.mainTexture = tex;
+
+        if (quadRenderer.material.HasProperty("_EmissionMap"))
+            quadRenderer.material.SetTexture("_EmissionMap", tex);
+
+        if (quadRenderer.material.HasProperty("_EmissionColor"))
+        {
+            quadRenderer.material.EnableKeyword("_EMISSION");
+            quadRenderer.material.SetColor("_EmissionColor", Color.white * emissionIntensity);
+        }
     }
 }

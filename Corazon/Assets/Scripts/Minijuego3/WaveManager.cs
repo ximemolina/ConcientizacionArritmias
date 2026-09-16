@@ -8,7 +8,7 @@ using UnityEngine;
 ///   Wave 2: 3 objects float in ? player places them ? Final object fades in
 ///
 /// Attach to a manager GameObject in the scene.
-/// Does NOT use PieceFloatAnimator ó uses its own FloatInOnly coroutine so
+/// Does NOT use PieceFloatAnimator ù uses its own FloatInOnly coroutine so
 /// WallObject's grab/drop behaviour is left completely untouched.
 /// </summary>
 public class WaveManager : MonoBehaviour
@@ -81,6 +81,9 @@ public class WaveManager : MonoBehaviour
     private bool wave2Complete = false;
     private bool tutorialDone = false;
     private bool doorMoving = false;
+    private bool doorTargetCached;
+    private Vector3 doorSlideTarget;
+    private Transform doorPanel;
 
     // -------------------------------------------------------------------------
 
@@ -92,7 +95,7 @@ public class WaveManager : MonoBehaviour
 
     private void Start()
     {
-        // Hide wave 1 at start ó wave 2 stays visible in scene
+        // Hide wave 1 at start ù wave 2 stays visible in scene
         //foreach (var obj in wave1Objects) if (obj != null) obj.SetActive(false);
 
         if (finalObject != null)
@@ -117,21 +120,22 @@ public class WaveManager : MonoBehaviour
         }
 
         // Move door when game is won
-        if (doorMoving && door != null && doorOpenTarget != null)
+        if (doorMoving && door != null)
         {
             slideshow.StartSlideshow();
-            float targetZ = doorOpenTarget.position.z;
-            Vector3 targetPosition = new Vector3(door.position.x, door.position.y, targetZ);
-
-            door.position = Vector3.MoveTowards(
-                door.position,
-                targetPosition,
-                doorSpeed * Time.deltaTime
-            );
-
-            if (Vector3.Distance(door.position, targetPosition) < 0.001f)
+            if (!doorTargetCached)
             {
-                door.position = targetPosition;
+                doorPanel = SlidingDoorMotion.GetSlidingPanel(door);
+                SlidingDoorMotion.AttachSlidingHardware(door, doorPanel);
+                Vector3 openPoint = doorOpenTarget != null
+                    ? doorOpenTarget.position
+                    : doorPanel.position + doorPanel.right * SlidingDoorMotion.DefaultSlideDistance;
+                doorSlideTarget = SlidingDoorMotion.GetOpenLocalPosition(doorPanel, openPoint);
+                doorTargetCached = true;
+            }
+
+            if (doorPanel != null && SlidingDoorMotion.MoveLocalTowards(doorPanel, doorSlideTarget, doorSpeed))
+            {
                 doorMoving = false;
                 Debug.Log("[WaveManager] Door opened!");
             }
@@ -201,7 +205,7 @@ public class WaveManager : MonoBehaviour
                         Physics.IgnoreCollision(c1, c2, true);
             }
 
-            // Ground-touch detection ó floats the object back if it falls below groundY
+            // Ground-touch detection ù floats the object back if it falls below groundY
             if (obj.GetComponent<GroundContact>() == null)
             {
                 var gc = obj.AddComponent<GroundContact>();
@@ -402,7 +406,7 @@ public class WaveManager : MonoBehaviour
 
         if (targetPos == null)
         {
-            Debug.LogWarning($"[WaveManager] No float target found for '{obj.name}' ó can't return it.");
+            Debug.LogWarning($"[WaveManager] No float target found for '{obj.name}' ù can't return it.");
             return;
         }
 

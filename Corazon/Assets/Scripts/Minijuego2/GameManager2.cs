@@ -7,8 +7,13 @@ public class GameManager2 : MonoBehaviour
     [SerializeField] private Transform door;
     [SerializeField] private Transform doorOpenPoint;
     [SerializeField] private float doorSpeed = 2f;
+    [SerializeField] private float doorSlideDistance = 1.45f;
 
     public bool gameWon = false;
+
+    private bool doorTargetCached;
+    private Vector3 doorSlideTarget;
+    private Transform doorPanel;
 
     private void Awake()
     {
@@ -17,19 +22,19 @@ public class GameManager2 : MonoBehaviour
 
     private void Update()
     {
-        if (gameWon)
-        {
-            Vector3 targetPosition = new Vector3(
-                door.position.x,          // Mantiene X actual
-                door.position.y,          // Mantiene Y actual
-                doorOpenPoint.position.z  // Solo toma la Z del punto destino
-            );
+        if (!gameWon || door == null)
+            return;
 
-            door.position = Vector3.MoveTowards(
-                door.position,
-                targetPosition,
-                doorSpeed * Time.deltaTime
-            );
+        if (!doorTargetCached)
+        {
+            doorPanel = SlidingDoorMotion.GetSlidingPanel(door);
+            SlidingDoorMotion.AttachSlidingHardware(door, doorPanel);
+            Vector3 openPoint = doorOpenPoint != null ? doorOpenPoint.position : doorPanel.position + doorPanel.right * SlidingDoorMotion.DefaultSlideDistance;
+            doorSlideTarget = SlidingDoorMotion.GetOpenLocalPosition(doorPanel, openPoint, doorSlideDistance);
+            doorTargetCached = true;
         }
+
+        if (doorPanel != null)
+            SlidingDoorMotion.MoveLocalTowards(doorPanel, doorSlideTarget, doorSpeed);
     }
 }
