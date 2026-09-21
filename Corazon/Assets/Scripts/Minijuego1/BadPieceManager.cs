@@ -7,7 +7,10 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 /// Orchestrates the game flow: watches the tutorial gate, tracks bad piece removal,
 /// and triggers good piece float-in. Delegates audio to GameAudioManager and
 /// animation to PieceFloatAnimator (added per-piece at runtime).
-/// 
+///
+/// Good pieces now float toward a per-piece anchor Transform (pieceAnchors),
+/// instead of forming relative to the player's head.
+///
 /// Requires GameAudioManager to be present in the scene.
 /// </summary>
 public class BadPieceManager : MonoBehaviour
@@ -18,8 +21,12 @@ public class BadPieceManager : MonoBehaviour
     public List<GameObject> badPieces = new List<GameObject>();
     public List<GameObject> goodPieces = new List<GameObject>();
 
-    [Header("Float Targets")]
-    public List<Transform> floatTargets = new List<Transform>();
+    [Header("Float Anchors (uno por good piece)")]
+    [Tooltip("Debe tener el mismo orden y cantidad que goodPieces. Cada pieza vuela hacia su anchor correspondiente.")]
+    public List<Transform> pieceAnchors = new List<Transform>();
+
+    [Tooltip("Si true, la pieza también adopta la rotación del anchor en vez de la rotación correcta del puzzle (targetSlot).")]
+    public bool useAnchorRotation = false;
 
     [Header("Float Settings")]
     public float lerpSpeed = 0.8f;
@@ -32,25 +39,11 @@ public class BadPieceManager : MonoBehaviour
     public bool applyRotationDuringFloat = true;
     public float hoverRotationSpeed = 15f;
 
-    [Header("Player-relative float")]
-    [Tooltip("Headset/camera used to place floating pieces. If empty, Camera.main is used.")]
-    public Transform playerHead;
-    [Tooltip("If true, pieces keep following the headset while floating. Leave off so they stay in world space after appearing.")]
-    public bool followPlayerWhileFloating = false;
-    [Tooltip("Ignore head pitch/roll so pieces stay level in front of the player.")]
-    public bool flattenPlayerYaw = true;
-    [Tooltip("Distance in front of the player (meters).")]
-    public float floatDistance = 1.35f;
-    [Tooltip("Vertical offset from eye height (negative = slightly below).")]
-    public float heightOffset = -0.1f;
-    [Tooltip("Scales the existing 2x2 layout so it fits in front of the player.")]
-    public float formationScale = 0.55f;
-    [Tooltip("Extra multiplier for left/right spacing between pieces.")]
-    public float horizontalSpread = 1.85f;
-    [Tooltip("Extra height added only to the upper two pieces (meters).")]
-    public float topHeightBonus = 0.4f;
-    [Tooltip("How quickly pieces follow the player. 0 = snap.")]
+    [Tooltip("Cuánto tarda la pieza en asentarse una vez llega al anchor (usado por PieceFloatAnimator si aplica).")]
     public float followSmoothing = 8f;
+
+    [Tooltip("Ignora inclinación al aplicar rotación durante el vuelo (se mantiene por compatibilidad con PieceFloatAnimator).")]
+    public bool flattenPlayerYaw = true;
 
     [Header("Tutorial Gate")]
     [Tooltip("Music starts when the CoachingCardRoot child of this object is deactivated.")]
@@ -88,6 +81,9 @@ public class BadPieceManager : MonoBehaviour
 
         if (GameAudioManager.Instance == null)
             Debug.LogError("[BadPieceManager] GameAudioManager not found in scene!");
+
+        if (pieceAnchors.Count != goodPieces.Count)
+            Debug.LogWarning($"[BadPieceManager] pieceAnchors ({pieceAnchors.Count}) no coincide en tamaño con goodPieces ({goodPieces.Count}). Revisa el orden en el Inspector.");
     }
 
     // -------------------------------------------------------------------------
@@ -122,12 +118,10 @@ public class BadPieceManager : MonoBehaviour
         Debug.Log("[BadPieceManager] Floating good pieces in!");
         GameAudioManager.Instance?.PlayGoodPhaseMusic();
 
-        Vector3 formationCentroid = GetFormationCentroid();
-
         for (int i = 0; i < goodPieces.Count; i++)
         {
             GameObject obj = goodPieces[i];
-            if (obj == null) continue;  // ? null check FIRST
+            if (obj == null) continue;  // null check FIRST
 
             var rotationPuzzle = obj.GetComponent<CorrectRotationPuzzle>();
             if (rotationPuzzle == null)
@@ -160,13 +154,25 @@ public class BadPieceManager : MonoBehaviour
                         Physics.IgnoreCollision(c1, c2, true);
             }
 
-            Transform player = ResolvePlayerHead();
-            Vector3 localOffset = GetPlayerLocalOffset(i, formationCentroid);
-            Vector3 targetPos = player != null
-                ? GetWorldPositionFromPlayer(player, localOffset)
-                : (floatTargets.Count > 0
-                    ? floatTargets[i % floatTargets.Count].position
-                    : obj.transform.position + Vector3.up * 1.2f);
+            // --- Destino: anchor específico de esta pieza ---
+            Vector3 targetPos;
+            Quaternion targetRot;
+
+            bool hasAnchor = i < pieceAnchors.Count && pieceAnchors[i] != null;
+
+            if (hasAnchor)
+            {
+                targetPos = pieceAnchors[i].position;
+            }
+            else
+            {
+                Debug.LogWarning($"[BadPieceManager] '{obj.name}' no tiene anchor asignado en pieceAnchors[{i}], usando posición actual + offset.");
+                targetPos = obj.transform.position + Vector3.up * 1.2f;
+            }
+
+            targetRot = (hasAnchor && useAnchorRotation)
+                ? pieceAnchors[i].rotation
+                : rotationPuzzle.targetSlot.rotation;
 
             var animator = obj.AddComponent<PieceFloatAnimator>();
             animator.lerpSpeed = lerpSpeed;
@@ -177,11 +183,11 @@ public class BadPieceManager : MonoBehaviour
             animator.hoverRotationSpeed = hoverRotationSpeed;
             animator.Initialize(
                 targetPos,
-                rotationPuzzle.targetSlot.rotation,
+                targetRot,
                 0f,
-                player,
-                localOffset,
-                followPlayerWhileFloating,
+                null,               // player = null: ya no depende del jugador
+                Vector3.zero,       // localOffset no se usa en este modo
+                false,              // followPlayerWhileFloating forzado a false
                 flattenPlayerYaw,
                 followSmoothing);
 
@@ -190,82 +196,6 @@ public class BadPieceManager : MonoBehaviour
     }
 
     // -------------------------------------------------------------------------
-
-    private Transform ResolvePlayerHead()
-    {
-        if (playerHead != null)
-            return playerHead;
-
-        Camera cam = Camera.main;
-        if (cam != null)
-            return cam.transform;
-
-        Debug.LogWarning("[BadPieceManager] No player head found ? using fixed float targets.");
-        return null;
-    }
-
-    private Vector3 GetFormationCentroid()
-    {
-        Vector3 sum = Vector3.zero;
-        int count = 0;
-        foreach (var t in floatTargets)
-        {
-            if (t == null) continue;
-            sum += t.position;
-            count++;
-        }
-        return count > 0 ? sum / count : Vector3.zero;
-    }
-
-    private Vector3 GetPlayerLocalOffset(int index, Vector3 centroid)
-    {
-        Vector3 worldOffset = Vector3.zero;
-        if (floatTargets.Count > 0)
-        {
-            Transform target = floatTargets[index % floatTargets.Count];
-            if (target != null)
-                worldOffset = target.position - centroid;
-        }
-        else
-        {
-            float fallbackX = (index % 2 == 0) ? -0.28f : 0.28f;
-            float fallbackY = (index < 2) ? 0.22f : -0.22f;
-            worldOffset = new Vector3(0f, fallbackY / Mathf.Max(formationScale, 0.01f), fallbackX / Mathf.Max(formationScale, 0.01f));
-        }
-
-        float x = worldOffset.z * formationScale * horizontalSpread;
-        float y = worldOffset.y * formationScale + heightOffset;
-        if (worldOffset.y > 0f)
-            y += topHeightBonus;
-
-        return new Vector3(x, y, floatDistance);
-    }
-
-    private Vector3 GetWorldPositionFromPlayer(Transform player, Vector3 localOffset)
-    {
-        Vector3 forward = player.forward;
-        if (flattenPlayerYaw)
-        {
-            forward.y = 0f;
-            if (forward.sqrMagnitude < 0.0001f)
-                forward = Vector3.ProjectOnPlane(player.up, Vector3.up);
-            if (forward.sqrMagnitude < 0.0001f)
-                forward = Vector3.forward;
-            else
-                forward.Normalize();
-        }
-
-        Vector3 right = Vector3.Cross(Vector3.up, forward);
-        if (right.sqrMagnitude < 0.0001f)
-            right = Vector3.right;
-        else
-            right.Normalize();
-
-        return player.position
-            + right * localOffset.x
-            + Vector3.up * localOffset.y
-            + forward * localOffset.z;
-    }
 
     private void Update()
     {
@@ -296,9 +226,9 @@ public class BadPieceManager : MonoBehaviour
 
     private void OnDrawGizmosSelected()
     {
-        if (floatTargets == null) return;
-        Gizmos.color = Color.green;
-        foreach (var t in floatTargets)
+        if (pieceAnchors == null) return;
+        Gizmos.color = Color.cyan;
+        foreach (var t in pieceAnchors)
         {
             if (t == null) continue;
             Gizmos.DrawWireSphere(t.position, 0.12f);
