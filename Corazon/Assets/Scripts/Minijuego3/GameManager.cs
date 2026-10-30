@@ -8,6 +8,9 @@ public class GameManager : MonoBehaviour
     public Transform doorOpenTarget;
     public float doorSpeed = 2f;
 
+    [Header("Objetos a desactivar al ganar")]
+    [SerializeField] private GameObject botonADesactivar;
+
     private int filledContainers = 0;
     private bool gameWon = false;
     private bool doorTargetCached;
@@ -49,6 +52,10 @@ public class GameManager : MonoBehaviour
             gameWon = true;
             doorTargetCached = false;
             Debug.Log("You win! Door opening.");
+
+            if (botonADesactivar != null)
+                botonADesactivar.SetActive(false);
+
             slideshow.StartSlideshow();
         }
     }
